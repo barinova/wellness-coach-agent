@@ -1,5 +1,13 @@
 node_modules
+package-lock.json
+yarn.lock
+bun.lock
+bun.lockb
+npm-shrinkwrap.json
 .env
 testAgent
 .idea
 .cursor
+.next
+.claude
+tsconfig.tsbuildinfo
