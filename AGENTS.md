@@ -30,15 +30,43 @@ Open **http://localhost:3000**. A coach run often takes 15–90 seconds; keep th
 
 `.env` needs `CURSOR_API_KEY`. Do not commit `.env`. Do not log the key.
 
-## Rules
+## Codebase principles
 
-- Keep the loop in the harness. Do not move coach/reviewer calls into the UI.
-- Medical keyword gate and `needs_human_professional` stay in front of coaching. Do not weaken them.
-- Coach and reviewer copy stay in English. Change prompts in the agent files, not by duplicating them in the UI.
-- Stay on-scope: no extra meals, training, or sleep sections unless the task asked for them.
-- UI: semantic tokens in `app/globals.css`, visible labels, errors next to the field with `role="alert"`, visible `:focus-visible`, 44px targets, `prefers-reduced-motion`. No emoji as icons.
-- Small, typed TypeScript. No unused code. No new dependencies unless the task needs them.
-- Keep the codebase high-model: names and structure that a reader (or an LLM) can follow without archaeology. Keep docs accurate — `AGENTS.md`, `README.md`, and comments only where the code is not enough. Update them in the same change as the code.
+- Keep the codebase high-model: names and structure that a reader (or an LLM) can follow without archaeology.
 - Separation of concerns: one module, one job. Do not mix UI, HTTP, prompts, and the review loop. Put new behavior next to its existing owner (`src/agents`, harness, `app/`, `data/`), not in a catch-all file.
+- Small, typed TypeScript. No unused code. No new dependencies unless the task needs them.
+- Keep docs accurate — `AGENTS.md`, `README.md`, and comments only where the code is not enough. Update them in the same change as the code.
+- Stay on-scope in product behavior: no extra meals, training, or sleep sections unless the task asked for them.
+- UI: semantic tokens in `app/globals.css`, visible labels, errors next to the field with `role="alert"`, visible `:focus-visible`, 44px targets, `prefers-reduced-motion`. No emoji as icons.
 - Do not rewrite `data/profile.md` / `data/log.md` unless asked.
-- Do not write tests. Do not use TDD. Do not add test files, test scripts, or testing libraries unless the user explicitly asks. Verify with `pnpm run build` and by running the app.
+
+## Safety and agent configuration
+
+- Keep the coach/review loop in the harness (`src/harness/runHealthAgent.ts`). Do not move coach/reviewer calls into the UI.
+- Medical keyword gate and `needs_human_professional` stay in front of coaching. Do not weaken them.
+- Coach and reviewer prompts stay in English. Change them in `src/agents/healthCoach.ts` and `src/agents/safetyReviewer.ts`, not by duplicating copy in the UI.
+- This is not a medical product: no diagnoses, treatment, medications, dosages, or symptom interpretation in coach output.
+- Never commit `.env`, API keys, or secrets. Never log `CURSOR_API_KEY`.
+- Prefer pnpm-only tooling already enforced by `packageManager`, `engines`, and `scripts/only-pnpm.mjs`.
+
+## Testing
+
+- Do **not** write tests for the app. AI agents must not add unit, integration, e2e, or snapshot tests unless the user explicitly asks.
+- Do **not** use TDD. Do not create failing tests first, then implement.
+- Do not add test files, test scripts, test runners, or testing libraries (Jest, Vitest, Playwright, Testing Library, etc.) unless the user explicitly asks.
+- Verify changes with `pnpm run build` and by running the app (`pnpm run dev`) against real flows.
+
+## Review and code analysis
+
+- Before finishing a change, re-read the diff for unused code, broken separation of concerns, weakened safety gates, and docs that no longer match the code.
+- Prefer a short self-check over new tooling: typecheck/build via `pnpm run build`, smoke the UI path that changed, confirm medical gate behavior still blocks medication/diagnosis/treatment tasks.
+- Do not invent a separate analysis pipeline, linter config, or CI matrix unless the user asks.
+- When reviewing prompts or harness behavior, judge against product rules: on-scope wellness only, English coach/reviewer copy, and human-professional routing when the task is medical.
+
+## Commits and pull requests
+
+- Do not create commits or push unless the user explicitly asks in that message.
+- If there are local changes that could be committed, ask whether to commit and whether to push; wait for a clear yes.
+- Commit messages: short, focus on why, match the repo style. Never commit `.env` or secrets.
+- Pull requests: summarize intent and risk (especially safety/harness/UI), list how you verified (`pnpm run build`, manual run). Keep PRs small and scoped to one concern when possible.
+- Do not use `--no-verify`, force-push to `main`/`master`, or rewrite history unless the user explicitly requests it.
