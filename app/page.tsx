@@ -1,7 +1,18 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useRef, useState } from "react";
-import { ArrowUp, CircleCheck, Loader2, OctagonAlert, RotateCcw, TriangleAlert } from "lucide-react";
+import {
+  ArrowUp,
+  CircleCheck,
+  Clock3,
+  GitBranch,
+  History,
+  Loader2,
+  OctagonAlert,
+  RotateCcw,
+  TrendingUp,
+  TriangleAlert,
+} from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,10 +29,20 @@ type Review = {
   issues: string[];
 };
 
+type RoundState = {
+  round: number;
+  plan: string;
+  review: Review;
+};
+
 type AgentResult = {
   plan: string;
   review: Review;
-  rounds: number;
+  rounds: RoundState[];
+  finalScore: number | null;
+  improved: boolean;
+  promptVersions: { coach: string; reviewer: string };
+  durationMs: number;
 };
 
 type UiState = "idle" | "running" | "result";
@@ -40,6 +61,11 @@ const VERDICT: Record<
     icon: TriangleAlert,
   },
 };
+
+function formatDuration(ms: number) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  return `${seconds} s`;
+}
 
 export default function HomePage() {
   const [task, setTask] = useState("");
@@ -68,9 +94,22 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task: nextTask }),
       });
-      const data = JSON.parse((await response.text()).trim() || "{}") as AgentResult & {
-        error?: string;
-      };
+      const raw = (await response.text()).trim();
+      const jsonText = raw.replace(/^\s*\n+/, "");
+      if (!jsonText || jsonText.startsWith("<!") || jsonText.startsWith("<html")) {
+        const missingPrompt = raw.match(/Missing prompt file: prompts\/[^"'<\s]+/);
+        throw new Error(
+          missingPrompt
+            ? `${missingPrompt[0]}. Create that file or set ACTIVE_PROMPTS back to an existing version, then restart pnpm run dev.`
+            : `Agent API returned HTML (${response.status}). Check the terminal running pnpm run dev and restart it after prompt changes.`,
+        );
+      }
+      let data: AgentResult & { error?: string };
+      try {
+        data = JSON.parse(jsonText) as AgentResult & { error?: string };
+      } catch {
+        throw new Error("Agent API returned a non-JSON response. Restart pnpm run dev and try again.");
+      }
       if (!response.ok || data.error) throw new Error(data.error ?? "Request failed");
       setResult(data);
       setState("result");
@@ -106,6 +145,8 @@ export default function HomePage() {
   const verdict = result ? VERDICT[result.review.verdict] : null;
   const needsSpecialist = result?.review.verdict === "needs_human_professional";
   const describedBy = error ? `${hintId} ${errorId}` : hintId;
+  const roundCount = result?.rounds.length ?? 0;
+  const displayScore = result ? (result.finalScore ?? result.review.score) : 0;
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-10 sm:py-16">
@@ -200,58 +241,133 @@ export default function HomePage() {
               </div>
               <CardDescription>
                 {result.review.verdict === "approve"
-                  ? "Reviewed and saved to data/output.md."
+                  ? "Coach → reviewer. Reviewed and saved to data/output.md."
                   : needsSpecialist
-                    ? "A self-serve plan was blocked. The notes below explain why."
-                    : `Not approved after ${result.rounds} ${result.rounds === 1 ? "round" : "rounds"}. data/output.md was not updated.`}
+                    ? "Coach → reviewer. A self-serve plan was blocked."
+                    : `Coach → reviewer. Not approved after ${roundCount} ${roundCount === 1 ? "round" : "rounds"}. data/output.md was not updated.`}
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-5">
-              <dl className="grid gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <dt className="text-sm text-muted-foreground">Score</dt>
-                  <dd className="flex flex-col gap-2">
-                    <span className="text-2xl font-bold tabular-nums">
-                      {result.review.score}
-                      <span className="text-base font-normal text-muted-foreground"> / 10</span>
-                    </span>
-                    <Progress
-                      value={result.review.score * 10}
-                      aria-label={`Score ${result.review.score} out of 10`}
-                    />
-                  </dd>
+            <CardContent className="flex flex-col gap-6">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    Safety score
+                  </p>
+                  <p className="text-2xl font-bold tabular-nums">
+                    {displayScore}
+                    <span className="text-base font-normal text-muted-foreground"> / 10</span>
+                  </p>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <dt className="text-sm text-muted-foreground">Review rounds</dt>
-                  <dd className="flex flex-col gap-2">
-                    <span className="text-2xl font-bold tabular-nums">
-                      {result.rounds}
-                      <span className="text-base font-normal text-muted-foreground">
-                        {` / ${MAX_ROUNDS}`}
-                      </span>
-                    </span>
-                    <Progress
-                      value={(result.rounds / MAX_ROUNDS) * 100}
-                      aria-label={`${result.rounds} of ${MAX_ROUNDS} rounds`}
-                    />
-                  </dd>
-                </div>
-              </dl>
+                <Progress
+                  value={displayScore * 10}
+                  aria-label={`Safety score ${displayScore} out of 10`}
+                  className="h-2.5"
+                />
+              </div>
 
-              {result.review.issues.length > 0 ? (
-                <div className="flex flex-col gap-2">
-                  <h3 className="text-sm font-bold">
-                    Reviewer notes ({result.review.issues.length})
-                  </h3>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    Review rounds
+                  </p>
+                  <p className="text-sm font-semibold tabular-nums">
+                    {roundCount}/{MAX_ROUNDS}
+                  </p>
+                </div>
+                <div
+                  className="flex gap-2"
+                  role="img"
+                  aria-label={`${roundCount} of ${MAX_ROUNDS} rounds`}
+                >
+                  {Array.from({ length: MAX_ROUNDS }, (_, index) => (
+                    <span
+                      key={index}
+                      className={`size-2.5 rounded-full ${
+                        index < roundCount ? "bg-foreground" : "bg-muted-foreground/25"
+                      }`}
+                      aria-hidden="true"
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <ul className="flex flex-col gap-3 text-sm">
+                <li className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    <Clock3 className="size-4 shrink-0" aria-hidden="true" />
+                    Time
+                  </span>
+                  <span className="font-medium tabular-nums">{formatDuration(result.durationMs)}</span>
+                </li>
+                <li className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    <GitBranch className="size-4 shrink-0" aria-hidden="true" />
+                    Prompts
+                  </span>
+                  <span className="font-medium text-right">
+                    coach {result.promptVersions.coach} / reviewer {result.promptVersions.reviewer}
+                  </span>
+                </li>
+                <li className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    <TrendingUp className="size-4 shrink-0" aria-hidden="true" />
+                    Dynamics
+                  </span>
+                  <span className="font-medium">
+                    {result.improved ? "Score improved" : "No score growth"}
+                  </span>
+                </li>
+              </ul>
+
+              <details className="group rounded-lg border border-border bg-muted/40 open:bg-muted/60">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">
+                  <span className="flex items-center gap-2">
+                    <History className="size-4 shrink-0" aria-hidden="true" />
+                    Round history
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">{roundCount}</span>
+                </summary>
+                <ul className="flex flex-col gap-2 border-t border-border px-3 py-3">
+                  {result.rounds.map((round) => {
+                    const roundVerdict = VERDICT[round.review.verdict];
+                    return (
+                      <li
+                        key={round.round}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-background px-3 py-2.5 text-sm"
+                      >
+                        <span className="font-medium">Round {round.round}</span>
+                        <span className="flex flex-wrap items-center gap-2">
+                          <Badge className={`h-6 px-2 text-xs ${roundVerdict.badge}`}>
+                            <roundVerdict.icon aria-hidden="true" />
+                            {roundVerdict.label}
+                          </Badge>
+                          <span className="tabular-nums text-muted-foreground">
+                            score {round.review.score}/10
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </details>
+
+              <div className="flex flex-col gap-2">
+                <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  Remarks
+                </h3>
+                {result.review.issues.length > 0 ? (
                   <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm marker:text-muted-foreground">
                     {result.review.issues.map((issue) => (
                       <li key={issue}>{issue}</li>
                     ))}
                   </ul>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No issues recorded.</p>
-              )}
+                ) : (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <CircleCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
+                    No issues
+                  </p>
+                )}
+              </div>
             </CardContent>
           </Card>
 

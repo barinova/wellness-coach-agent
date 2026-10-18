@@ -3,14 +3,22 @@ import { Agent as CursorAgent } from "@cursor/sdk";
 import { run, setDefaultOpenAIClient, setOpenAIAPI, setTracingDisabled } from "@openai/agents";
 import OpenAI from "openai";
 import { coach } from "../agents/healthCoach";
-import { reviewer, ReviewSchema, type Review } from "../agents/safetyReviewer";
+import { reviewer } from "../agents/safetyReviewer";
+import { activePromptVersions } from "./promptVersions";
+import { appendRound, emptyRounds, type RoundState } from "./rounds";
+import { finalScore, improved } from "./score";
+import { reviewPlan, type Review } from "./validateReview";
 
-export type { Review };
+export type { Review, RoundState };
 
 export type HealthAgentResult = {
   plan: string;
   review: Review;
-  rounds: number;
+  rounds: RoundState[];
+  finalScore: number | null;
+  improved: boolean;
+  promptVersions: { coach: string; reviewer: string };
+  durationMs: number;
 };
 
 function apiKeyFromEnvFile() {
@@ -27,7 +35,7 @@ function apiKeyFromEnvFile() {
 }
 
 const MODEL = "composer-2.5";
-const MAX_ROUNDS = 3;
+const DEFAULT_MAX_ROUNDS = 3;
 
 let clientReady = false;
 
@@ -71,30 +79,30 @@ function ensureClient() {
 
 const textOf = (r: { finalOutput?: unknown }) => String(r.finalOutput ?? "").trim();
 
-function parseReview(raw: string) {
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    return ReviewSchema.parse(JSON.parse(match[0]));
-  } catch {
-    return null;
-  }
-}
-
-async function reviewPlan(prompt: string) {
-  let parsed = parseReview(textOf(await run(reviewer, prompt)));
-  if (!parsed) {
-    parsed = parseReview(
-      textOf(await run(reviewer, `${prompt}\n\nPrevious reply was invalid JSON. Return a single JSON object only.`)),
-    );
-  }
-  if (!parsed) throw new Error("Reviewer did not return valid JSON");
-  return parsed;
-}
-
 const MEDICAL_ISSUE = "Request is about medication, diagnosis, or treatment — outside wellness coaching";
 
-export async function runHealthAgent(task: string): Promise<HealthAgentResult> {
+function buildResult(
+  plan: string,
+  review: Review,
+  rounds: RoundState[],
+  startedAt: number,
+): HealthAgentResult {
+  return {
+    plan,
+    review,
+    rounds,
+    finalScore: finalScore(rounds),
+    improved: improved(rounds),
+    promptVersions: activePromptVersions(),
+    durationMs: Date.now() - startedAt,
+  };
+}
+
+export async function runHealthAgent(
+  task: string,
+  maxRounds = DEFAULT_MAX_ROUNDS,
+): Promise<HealthAgentResult> {
+  const startedAt = Date.now();
   ensureClient();
 
   if (
@@ -107,9 +115,10 @@ export async function runHealthAgent(task: string): Promise<HealthAgentResult> {
       score: 0,
       issues: [MEDICAL_ISSUE],
     };
+    const rounds = appendRound(emptyRounds(), 1, "", review);
     console.log(`Round 1: verdict=${review.verdict}, score=${review.score}, issues=${JSON.stringify(review.issues)}`);
     console.log("This request needs a specialist. Stopping.");
-    return { plan: "", review, rounds: 1 };
+    return buildResult("", review, rounds, startedAt);
   }
 
   const profile = readFileSync("data/profile.md", "utf8");
@@ -119,29 +128,39 @@ export async function runHealthAgent(task: string): Promise<HealthAgentResult> {
   let plan = "";
   let notes = "";
   let review: Review | undefined;
+  let rounds = emptyRounds();
 
-  for (let round = 1; round <= MAX_ROUNDS; round++) {
+  const runReviewer = async (prompt: string) => textOf(await run(reviewer, prompt));
+
+  for (let round = 1; round <= maxRounds; round++) {
     plan = textOf(
       await run(
         coach,
         notes ? `${context}\n\nReviewer notes:\n${notes}\n\nRevise the previous plan:\n${plan}` : context,
       ),
     );
-    review = await reviewPlan(`${context}\n\nCoach plan:\n${plan}`);
+    const revisionContext = notes
+      ? `Review round: ${round} of ${maxRounds}. This is a revised plan. Previous issues the coach was asked to fix:\n${notes}`
+      : `Review round: ${round} of ${maxRounds}. This is the first coach draft.`;
+    review = await reviewPlan(
+      runReviewer,
+      `${context}\n\n${revisionContext}\n\nCoach plan:\n${plan}`,
+    );
+    rounds = appendRound(rounds, round, plan, review);
     console.log(`Round ${round}: verdict=${review.verdict}, score=${review.score}, issues=${JSON.stringify(review.issues)}`);
 
     if (review.verdict === "needs_human_professional") {
       console.log("This request needs a specialist. Stopping.");
-      return { plan, review, rounds: round };
+      return buildResult(plan, review, rounds, startedAt);
     }
     if (review.verdict === "approve") {
       writeFileSync("data/output.md", plan);
       console.log(`Plan saved to output.md. score=${review.score}`);
-      return { plan, review, rounds: round };
+      return buildResult(plan, review, rounds, startedAt);
     }
     notes = review.issues.join("\n");
   }
 
-  console.log("Plan was not approved in 3 rounds. output.md was not updated.");
-  return { plan, review: review!, rounds: MAX_ROUNDS };
+  console.log(`Plan was not approved in ${maxRounds} rounds. output.md was not updated.`);
+  return buildResult(plan, review!, rounds, startedAt);
 }

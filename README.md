@@ -1,6 +1,6 @@
 # wellness-coach-agent
 
-Local Health Coach + Safety Reviewer. The revision loop lives in `src/harness/runHealthAgent.ts`. Use the Next.js UI to run it.
+Local Health Coach + Safety Reviewer. The harness in `src/harness/` runs the coach/review loop with versioned prompts under `prompts/`. Use the Next.js UI to run it; the result shows rounds, scores, prompt versions, and duration.
 
 ## Setup
 
