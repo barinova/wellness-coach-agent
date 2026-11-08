@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const ACTIVE_PROMPTS: { coach: string; reviewer: string } = {
-  coach: "v1",
+  coach: "v2",
   reviewer: "v1",
 };
 

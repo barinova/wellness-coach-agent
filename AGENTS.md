@@ -8,15 +8,17 @@ Local wellness coach with a safety review loop. Not a medical product. Coach ans
 
 ## Layout
 
-- `src/agents/healthCoach.ts` / `src/agents/safetyReviewer.ts` — agent constructors; instructions from `prompts/`
-- `prompts/healthCoach.v1.md`, `prompts/safetyReviewer.v1.md` — versioned prompt text; active versions in `src/harness/promptVersions.ts`
-- `src/harness/runHealthAgent.ts` — orchestrator: medical keyword gate, coach/review loop (`maxRounds` default 3), writes `data/output.md` on approve
+- `src/agents/healthCoach.ts` / `src/agents/safetyReviewer.ts` — agent constructors; instructions from `prompts/`; coach gets tools, reviewer has none (no side effects)
+- `src/skills/` — coach tools (`getProfile`, `getRecentLog`, `savePlan`, `generateShoppingList`, `suggestWorkoutTemplate`, `listFavoriteRecipes`); Zod + descriptions; simple array, no registry
+- `prompts/healthCoach.v2.md`, `prompts/safetyReviewer.v1.md` — versioned prompt text; active versions in `src/harness/promptVersions.ts`
+- `src/harness/runHealthAgent.ts` — orchestrator: medical keyword gate, coach/review loop (`maxRounds` default 3), gated `savePlan` on approve, returns `toolCalls`
+- `src/harness/cursorOpenAI.ts` — Cursor ↔ OpenAI chat_completions adapter with tool_calls bridge
 - `src/harness/validateReview.ts` — Zod review schema + JSON parse with one retry
 - `src/harness/rounds.ts` — `RoundState` history
 - `src/harness/score.ts` — `finalScore` + `improved`
-- `app/page.tsx` + `app/globals.css` — UI (result shows duration, prompt versions, round history, dynamics)
+- `app/page.tsx` + `app/globals.css` — UI (duration, prompt versions, round history, dynamics, tool calls)
 - `app/api/agent/run/route.ts` — POST `{ task }`, Node runtime, 300s
-- `data/profile.md`, `data/log.md` — user context; `data/output.md` — last approved plan
+- `data/profile.md` — tracked seed profile; `data/log.md`, `data/recipes.md`, `data/output.md`, `data/shopping.md` — local/generated via coach tools (gitignored)
 - `design-system/health-coach/MASTER.md` — visual source of truth (healthcare tokens in CSS may override the bio-red palette)
 
 ## Commands
@@ -47,6 +49,8 @@ Open **http://localhost:3000**. A coach run often takes 15–90 seconds; keep th
 
 - Keep the coach/review loop in the harness (`src/harness/runHealthAgent.ts`). Do not move coach/reviewer calls into the UI.
 - Medical keyword gate and `needs_human_professional` stay in front of coaching. Do not weaken them.
+- Tools belong only on the Health Coach. Safety Reviewer stays text-in / JSON-out with no tools or file side effects.
+- `savePlan` writes are gated by the harness after reviewer approve — do not rely on the prompt alone.
 - Coach and reviewer prompts stay in English under `prompts/*.md`. Change prompt text there (or bump `ACTIVE_PROMPTS` in `src/harness/promptVersions.ts`); do not duplicate copy in the UI.
 - This is not a medical product: no diagnoses, treatment, medications, dosages, or symptom interpretation in coach output.
 - Never commit `.env`, API keys, or secrets. Never log `CURSOR_API_KEY`.

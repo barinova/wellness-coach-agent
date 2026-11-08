@@ -11,3 +11,9 @@ testAgent
 .next
 .claude
 tsconfig.tsbuildinfo
+
+# Local / generated coach data (seed profile stays tracked)
+data/log.md
+data/recipes.md
+data/output.md
+data/shopping.md

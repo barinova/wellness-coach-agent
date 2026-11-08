@@ -1,6 +1,6 @@
 # wellness-coach-agent
 
-Local Health Coach + Safety Reviewer. The harness in `src/harness/` runs the coach/review loop with versioned prompts under `prompts/`. Use the Next.js UI to run it; the result shows rounds, scores, prompt versions, and duration.
+Local Health Coach + Safety Reviewer. The harness in `src/harness/` runs the coach/review loop with versioned prompts under `prompts/`. The coach uses tools in `src/skills/` (profile, log, recipes, shopping, workouts, gated save); the reviewer has no tools. Use the Next.js UI to run it; the result shows rounds, scores, prompt versions, duration, and which tools ran.
 
 ## Setup
 
@@ -18,4 +18,4 @@ This repo accepts **pnpm only**. `npm`, `yarn`, and `bun` will fail.
 pnpm run dev
 ```
 
-Open **http://localhost:3000** (not the Network IP), enter a task, click **Run agent**. A run often takes 15–90 seconds. On `approve`, the plan is written to `data/output.md`.
+Open **http://localhost:3000** (not the Network IP), enter a task, click **Run agent**. A run often takes 15–90 seconds. On `approve`, the harness saves via `savePlan` to `data/output.md`. Shopping lists go to `data/shopping.md` when that tool runs.
