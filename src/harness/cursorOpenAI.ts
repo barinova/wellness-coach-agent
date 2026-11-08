@@ -79,12 +79,27 @@ function formatTools(tools: OpenAITool[]): string {
     .join("\n\n");
 }
 
-const TOOL_PROTOCOL = `You may call tools. Reply with ONE of:
-1) Final answer as plain text (no JSON wrapper), OR
-2) Exactly one JSON object (no markdown fences) of the form:
+const TOOL_PROTOCOL = `When tools are listed and you still need profile, log, recipes, shopping, or a workout template, you MUST call tools before any final plan.
+Reply with ONE of:
+1) Exactly one JSON object (no markdown fences):
 {"tool_calls":[{"id":"call_1","name":"TOOL_NAME","arguments":{...}}]}
-You may include multiple objects in tool_calls if you need several tools at once.
-Do not invent tool names. Arguments must match the tool schema.`;
+You may include multiple objects in tool_calls. Do not invent tool names. Arguments must match the schema.
+2) Final answer as plain text ONLY after tool results are already in this conversation (role=tool messages), or when no tool is relevant.`;
+
+function messagesHaveToolResults(messages: ChatMessage[]): boolean {
+  return messages.some((m) => m.role === "tool" || m.tool_call_id);
+}
+
+async function cursorText(apiKey: string, prompt: string): Promise<{ id: string; text: string }> {
+  const result = await CursorAgent.prompt(prompt, {
+    apiKey,
+    model: { id: MODEL, params: [{ id: "fast", value: "false" }] },
+    tools: [],
+    local: { cwd: process.cwd(), settingSources: [] },
+  });
+  if (result.status === "error") throw new Error(`Cursor run failed (${result.id})`);
+  return { id: result.id ?? "cursor", text: String(result.result ?? "").trim() };
+}
 
 type ParsedToolCall = { id: string; name: string; arguments: string };
 
@@ -141,14 +156,12 @@ function completionResponse(
   );
 }
 
-let clientReady = false;
-
 /** Wires Agents SDK chat_completions to CursorAgent.prompt, including a text↔tool_calls bridge. */
 export function ensureCursorOpenAIClient() {
-  if (clientReady) return;
   const apiKey = apiKeyFromEnvFile();
   setTracingDisabled(true);
   setOpenAIAPI("chat_completions");
+  // Re-bind each run so HMR picks up adapter changes (no stale fetch closure).
   setDefaultOpenAIClient(
     new OpenAI({
       apiKey,
@@ -160,27 +173,33 @@ export function ensureCursorOpenAIClient() {
         };
         const messages = body.messages ?? [];
         const tools = (body.tools ?? []).filter((t) => t.function?.name);
+        const formatted = formatMessages(messages);
+        // Harness fallback rewrite: tools already applied outside the LLM loop.
+        const plainPreferred = /already fetched|Plain markdown only/i.test(formatted);
 
         let prompt =
           "Do not read or write files, do not run commands. Reply with text only (or the tool JSON protocol below if tools are listed).\n\n" +
-          formatMessages(messages);
+          formatted;
 
         if (tools.length > 0) {
           prompt += `\n\nAvailable tools:\n${formatTools(tools)}\n\n${TOOL_PROTOCOL}`;
         }
 
-        const result = await CursorAgent.prompt(prompt, {
-          apiKey,
-          model: { id: MODEL, params: [{ id: "fast", value: "false" }] },
-          local: { cwd: process.cwd(), settingSources: [] },
-        });
-        if (result.status === "error") throw new Error(`Cursor run failed (${result.id})`);
-
-        const text = String(result.result ?? "").trim();
-        const id = result.id ?? "cursor";
+        // Built-in Cursor tools would bypass coach skills; skills own side effects.
+        let { id, text } = await cursorText(apiKey, prompt);
 
         if (tools.length > 0) {
-          const calls = tryParseToolCalls(text);
+          let calls = tryParseToolCalls(text);
+          // Soft protocol: model often skips tools and writes the plan. One forced retry.
+          if (!calls && !messagesHaveToolResults(messages) && !plainPreferred) {
+            const retry = await cursorText(
+              apiKey,
+              `${prompt}\n\nYour previous reply was plain text, but tools are still unused. Reply with ONLY the tool_calls JSON object now — no plan yet.`,
+            );
+            id = retry.id;
+            text = retry.text;
+            calls = tryParseToolCalls(text);
+          }
           if (calls) {
             return completionResponse(
               id,
@@ -202,5 +221,4 @@ export function ensureCursorOpenAIClient() {
       },
     }),
   );
-  clientReady = true;
 }

@@ -11,12 +11,14 @@ Local wellness coach with a safety review loop. Not a medical product. Coach ans
 - `src/agents/healthCoach.ts` / `src/agents/safetyReviewer.ts` — agent constructors; instructions from `prompts/`; coach gets tools, reviewer has none (no side effects)
 - `src/skills/` — coach tools (`getProfile`, `getRecentLog`, `savePlan`, `generateShoppingList`, `suggestWorkoutTemplate`, `listFavoriteRecipes`); Zod + descriptions; simple array, no registry
 - `prompts/healthCoach.v2.md`, `prompts/safetyReviewer.v1.md` — versioned prompt text; active versions in `src/harness/promptVersions.ts`
-- `src/harness/runHealthAgent.ts` — orchestrator: medical keyword gate, coach/review loop (`maxRounds` default 3), gated `savePlan` on approve, returns `toolCalls`
+- `src/harness/runHealthAgent.ts` — orchestrator: medical keyword gate, coach/review loop (`maxRounds` default 3), required-tool nudge + harness fallback, gated `savePlan` on approve, returns `toolCalls`
+- `src/harness/requiredTools.ts` — which tools a task implies; soft nudge then deterministic fallback
+- `src/harness/collectToolCalls.ts` — ordered `ToolCallInfo` (name + optional detail, e.g. getRecentLog days)
 - `src/harness/cursorOpenAI.ts` — Cursor ↔ OpenAI chat_completions adapter with tool_calls bridge
 - `src/harness/validateReview.ts` — Zod review schema + JSON parse with one retry
-- `src/harness/rounds.ts` — `RoundState` history
+- `src/harness/rounds.ts` — `RoundState` history (includes per-round `toolCalls`)
 - `src/harness/score.ts` — `finalScore` + `improved`
-- `app/page.tsx` + `app/globals.css` — UI (duration, prompt versions, round history, dynamics, tool calls)
+- `app/page.tsx` + `app/globals.css` — UI (duration, prompt versions, round history with tools, dynamics)
 - `app/api/agent/run/route.ts` — POST `{ task }`, Node runtime, 300s
 - `data/profile.md` — tracked seed profile; `data/log.md`, `data/recipes.md`, `data/output.md`, `data/shopping.md` — local/generated via coach tools (gitignored)
 - `design-system/health-coach/MASTER.md` — visual source of truth (healthcare tokens in CSS may override the bio-red palette)

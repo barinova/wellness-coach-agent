@@ -1,6 +1,13 @@
 import { tool } from "@openai/agents";
 import { z } from "zod";
 
+/** Task asks for training / a short workout. Used so the harness can nudge the template tool. */
+export function wantsWorkout(task: string): boolean {
+  return /workout|training|mobility|exercise|activity|тренировк|зарядк|разминк|упражнен/i.test(
+    task,
+  );
+}
+
 const TEMPLATES: { keys: string[]; title: string; body: string }[] = [
   {
     keys: ["strength", "muscle", "gym", "lift"],
@@ -52,7 +59,7 @@ export function pickWorkoutTemplate(goal: string): string {
 export const suggestWorkoutTemplate = tool({
   name: "suggestWorkoutTemplate",
   description:
-    "Return one hardcoded workout template matched loosely to a training goal (strength, mobility, walk/cardio, or home/bodyweight). Use when the user asks for a workout outline; does not invent medical rehab programs.",
+    "Return one hardcoded workout template matched loosely to a training goal (strength, mobility, walk/cardio, or home/bodyweight). REQUIRED whenever the user asks for a workout, training, mobility, or short exercise session — including when the same message also asks for a meal plan. Do not invent a workout from memory; call this tool first. Not for medical rehab.",
   parameters: z.object({
     goal: z
       .string()

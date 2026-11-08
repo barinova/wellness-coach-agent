@@ -4,77 +4,41 @@ import { z } from "zod";
 
 const SHOPPING_PATH = "data/shopping.md";
 
-const SKIP = new Set(
-  [
-    "the",
-    "and",
-    "with",
-    "from",
-    "into",
-    "over",
-    "under",
-    "then",
-    "this",
-    "that",
-    "your",
-    "plate",
-    "steps",
-    "min",
-    "minutes",
-    "hour",
-    "hours",
-    "serve",
-    "serves",
-    "optional",
-    "about",
-    "small",
-    "large",
-    "cup",
-    "cups",
-    "tbsp",
-    "tsp",
-    "slice",
-    "slices",
-    "piece",
-    "pieces",
-    "why",
-    "fits",
-    "one",
-    "two",
-    "add",
-    "use",
-    "start",
-    "cook",
-    "heat",
-    "pan",
-    "pot",
-    "bowl",
-  ].map((w) => w.toLowerCase()),
-);
+/** Task asks for a grocery list. Used so the harness can nudge the writer tool. */
+export function wantsShoppingList(task: string): boolean {
+  return /shopping|grocer|список покупок|покупк/i.test(task);
+}
 
-/** Heuristic ingredient lines from plan markdown — local only, no NLP APIs. */
+const SKIP_ITEM =
+  /^(item|qty|amount|ingredient|for|no|without|not|avoid|skip|optional|and|with|the)\b|\b(plan|minutes?|recipe|serves|step)\b/;
+
+/** Bullet and table rows only — local heuristic, no NLP APIs. */
 export function buildShoppingList(planMarkdown: string): string {
   const candidates = new Set<string>();
-  const lines = planMarkdown.split(/\r?\n/);
 
-  for (const line of lines) {
-    const cleaned = line
-      .replace(/^[#>*\-\d.\s]+/, "")
-      .replace(/\([^)]*\)/g, "")
-      .replace(/\d+\s*[-–]?\s*\d*\s*(min|minutes|hour|hours|g|ml|oz|lb)\b/gi, "")
-      .trim();
-    if (!cleaned || cleaned.length < 3) continue;
+  for (const line of planMarkdown.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || /^\|?\s*-{3,}/.test(trimmed)) continue;
 
-    for (const part of cleaned.split(/,|\/|;|\band\b/i)) {
+    const bullet = trimmed.match(/^(?:[-*]|\d+[.)])\s+(.+)$/);
+    const cell = trimmed.startsWith("|")
+      ? trimmed.split("|").map((part) => part.trim()).filter(Boolean)[0]
+      : undefined;
+    const raw = bullet?.[1] ?? cell;
+    if (!raw) continue;
+
+    for (const part of raw.split(/,|;|\band\b|\//i)) {
       const item = part
-        .replace(/\b(a|an|the|some|fresh|cooked|steamed|pan-?fried|minced|sliced|chopped)\b/gi, "")
-        .replace(/[^a-zA-Z\s\-']/g, " ")
+        .replace(/\([^)]*\)/g, " ")
+        .replace(/^(breakfast|lunch|dinner|snack|supper)\b/i, " ")
+        .replace(/\b\d+([./]\d+)?\s*(g|kg|ml|l|oz|lb|tbsp|tsp|cups?|min|minutes)?\b/gi, " ")
+        .replace(/[~—–].*$/, " ")
+        .replace(/[^a-zA-Z\s'-]/g, " ")
         .replace(/\s+/g, " ")
         .trim()
         .toLowerCase();
-      if (!item || item.length < 3 || item.length > 40) continue;
-      if (SKIP.has(item)) continue;
-      if (/^(step|round|score|plan|task)/.test(item)) continue;
+      if (item.length < 3 || item.length > 36 || item.split(" ").length > 4) continue;
+      if (SKIP_ITEM.test(item)) continue;
       candidates.add(item);
     }
   }
@@ -96,7 +60,7 @@ export function writeShoppingList(planMarkdown: string): string {
 export const generateShoppingList = tool({
   name: "generateShoppingList",
   description:
-    "Build a simple shopping list from a meal/plan markdown, write it to data/shopping.md, and return the list text. Call when the user asks for groceries or a shopping list for a plan you already have (pass that plan markdown).",
+    "Build a simple shopping list from meal-plan markdown, write it to data/shopping.md, and return the list text. Call this whenever the user asks for groceries or a shopping list — you cannot write that file any other way. Pass the plan markdown (draft it first from profile, log, or recipes if this turn does not already contain a plan).",
   parameters: z.object({
     planMarkdown: z
       .string()

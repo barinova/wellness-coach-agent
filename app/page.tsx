@@ -12,7 +12,6 @@ import {
   RotateCcw,
   TrendingUp,
   TriangleAlert,
-  Wrench,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -30,10 +29,16 @@ type Review = {
   issues: string[];
 };
 
+type ToolCallInfo = {
+  name: string;
+  detail?: string;
+};
+
 type RoundState = {
   round: number;
   plan: string;
   review: Review;
+  toolCalls?: ToolCallInfo[];
 };
 
 type AgentResult = {
@@ -44,8 +49,33 @@ type AgentResult = {
   improved: boolean;
   promptVersions: { coach: string; reviewer: string };
   durationMs: number;
-  toolCalls: string[];
+  toolCalls: Array<string | ToolCallInfo>;
 };
+
+function normalizeToolCall(call: string | ToolCallInfo): ToolCallInfo {
+  return typeof call === "string" ? { name: call } : call;
+}
+
+function ToolCallList({ calls }: { calls: Array<string | ToolCallInfo> }) {
+  if (calls.length === 0) {
+    return <p className="text-sm text-muted-foreground">No tools used</p>;
+  }
+  return (
+    <ol className="flex list-decimal flex-col gap-1.5 pl-5 text-sm marker:text-muted-foreground">
+      {calls.map((raw, index) => {
+        const call = normalizeToolCall(raw);
+        return (
+          <li key={`${call.name}-${index}`} className="font-mono text-[0.8125rem]">
+            <span>{call.name}</span>
+            {call.detail ? (
+              <span className="ml-2 font-sans text-muted-foreground">({call.detail})</span>
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 type UiState = "idle" | "running" | "result";
 
@@ -321,25 +351,10 @@ export default function HomePage() {
                 </li>
               </ul>
 
-              <div className="flex flex-col gap-2">
-                <h3 className="flex items-center gap-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  <Wrench className="size-4 shrink-0" aria-hidden="true" />
-                  What the agent did
-                </h3>
-                {(result.toolCalls ?? []).length > 0 ? (
-                  <ol className="flex list-decimal flex-col gap-1.5 pl-5 text-sm marker:text-muted-foreground">
-                    {(result.toolCalls ?? []).map((name, index) => (
-                      <li key={`${name}-${index}`} className="font-mono text-[0.8125rem]">
-                        {name}
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No tools used</p>
-                )}
-              </div>
-
-              <details className="group rounded-lg border border-border bg-muted/40 open:bg-muted/60">
+              <details
+                className="group rounded-lg border border-border bg-muted/40 open:bg-muted/60"
+                open
+              >
                 <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">
                   <span className="flex items-center gap-2">
                     <History className="size-4 shrink-0" aria-hidden="true" />
@@ -353,18 +368,21 @@ export default function HomePage() {
                     return (
                       <li
                         key={round.round}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-background px-3 py-2.5 text-sm"
+                        className="flex flex-col gap-2 rounded-md bg-background px-3 py-2.5 text-sm"
                       >
-                        <span className="font-medium">Round {round.round}</span>
-                        <span className="flex flex-wrap items-center gap-2">
-                          <Badge className={`h-6 px-2 text-xs ${roundVerdict.badge}`}>
-                            <roundVerdict.icon aria-hidden="true" />
-                            {roundVerdict.label}
-                          </Badge>
-                          <span className="tabular-nums text-muted-foreground">
-                            score {round.review.score}/10
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium">Round {round.round}</span>
+                          <span className="flex flex-wrap items-center gap-2">
+                            <Badge className={`h-6 px-2 text-xs ${roundVerdict.badge}`}>
+                              <roundVerdict.icon aria-hidden="true" />
+                              {roundVerdict.label}
+                            </Badge>
+                            <span className="tabular-nums text-muted-foreground">
+                              score {round.review.score}/10
+                            </span>
                           </span>
-                        </span>
+                        </div>
+                        <ToolCallList calls={round.toolCalls ?? []} />
                       </li>
                     );
                   })}
