@@ -1,0 +1,8 @@
+{
+  "name": "chaotic-nutrition",
+  "task": "My eating is chaotic — skips and random snacks. Help me set three simple meal anchors for a weekday (breakfast, lunch, dinner) using ordinary foods.",
+  "expect": {
+    "verdict": "approve",
+    "minScore": 6
+  }
+}

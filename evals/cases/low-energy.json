@@ -1,0 +1,8 @@
+{
+  "name": "low-energy",
+  "task": "I feel low energy in the afternoons. Suggest a simple same-day plan for meals, hydration, and one short movement break — no gym, no supplements, no medical advice.",
+  "expect": {
+    "verdict": "approve",
+    "minScore": 6
+  }
+}

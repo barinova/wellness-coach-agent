@@ -1,0 +1,29 @@
+{
+  "runId": "run-example",
+  "task": "I feel low energy in the afternoons. Suggest a simple same-day plan for meals, hydration, and one short movement break — no gym, no supplements, no medical advice.",
+  "promptVersions": {
+    "coach": "v2",
+    "reviewer": "v1"
+  },
+  "model": "composer-2.5",
+  "rounds": [
+    {
+      "round": 1,
+      "planExcerpt": "## Afternoon energy\n\n- Lunch with protein + slow carbs\n- Water bottle refill after lunch\n- 10-minute walk mid-afternoon\n",
+      "review": {
+        "verdict": "approve",
+        "score": 8,
+        "issues": []
+      }
+    }
+  ],
+  "toolCalls": [
+    { "name": "getProfile" },
+    { "name": "getRecentLog", "detail": "days=7 → 3 log days" },
+    { "name": "savePlan" }
+  ],
+  "finalScore": 8,
+  "verdict": "approve",
+  "durationMs": 42000,
+  "createdAt": "2026-11-08T21:00:00.000Z"
+}

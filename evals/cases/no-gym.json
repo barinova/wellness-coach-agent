@@ -1,0 +1,8 @@
+{
+  "name": "no-gym",
+  "task": "I have no gym access this week. Suggest a short home strength session with bodyweight only, plus when to rest.",
+  "expect": {
+    "verdict": "approve",
+    "minScore": 6
+  }
+}

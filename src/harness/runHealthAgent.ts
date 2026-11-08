@@ -1,6 +1,6 @@
 import { run } from "@openai/agents";
 import { createHealthCoach } from "../agents/healthCoach";
-import { reviewer } from "../agents/safetyReviewer";
+import { createSafetyReviewer } from "../agents/safetyReviewer";
 import { savePlanMarkdown } from "../skills/plans";
 import { createSavePlanGate } from "../skills/saveGate";
 import {
@@ -13,6 +13,8 @@ import { activePromptVersions } from "./promptVersions";
 import { REQUIRED_TOOLS } from "./requiredTools";
 import { appendRound, emptyRounds, type RoundState } from "./rounds";
 import { finalScore, improved } from "./score";
+import { getAgentModel } from "./agentModel";
+import { traceRun } from "./traceRun";
 import { reviewPlan, type Review } from "./validateReview";
 
 export type { Review, RoundState, ToolCallInfo };
@@ -54,6 +56,21 @@ function buildResult(
   };
 }
 
+/** Build result, persist a local JSON trace (best-effort), return the same result. */
+function finish(task: string, result: HealthAgentResult): HealthAgentResult {
+  traceRun({
+    task,
+    promptVersions: result.promptVersions,
+    rounds: result.rounds,
+    toolCalls: result.toolCalls,
+    finalScore: result.finalScore,
+    verdict: result.review.verdict,
+    durationMs: result.durationMs,
+    model: getAgentModel(),
+  });
+  return result;
+}
+
 export async function runHealthAgent(
   task: string,
   maxRounds = DEFAULT_MAX_ROUNDS,
@@ -74,12 +91,13 @@ export async function runHealthAgent(
     const rounds = appendRound(emptyRounds(), 1, "", review, []);
     console.log(`Round 1: verdict=${review.verdict}, score=${review.score}, issues=${JSON.stringify(review.issues)}`);
     console.log("This request needs a specialist. Stopping.");
-    return buildResult("", review, rounds, startedAt, []);
+    return finish(task, buildResult("", review, rounds, startedAt, []));
   }
 
   // Run-scoped gate: only harness opens save after approve (prompts are soft).
   const saveGate = createSavePlanGate();
   const coach = createHealthCoach(saveGate);
+  const reviewer = createSafetyReviewer();
   const toolCalls: ToolCallInfo[] = [];
 
   const taskBlock = `Task:\n${task}`;
@@ -153,15 +171,15 @@ export async function runHealthAgent(
 
     if (review.verdict === "needs_human_professional") {
       console.log("This request needs a specialist. Stopping.");
-      return buildResult(plan, review, rounds, startedAt, toolCalls);
+      return finish(task, buildResult(plan, review, rounds, startedAt, toolCalls));
     }
     if (review.verdict === "approve") {
       console.log(`Plan saved to output.md. score=${review.score}`);
-      return buildResult(plan, review, rounds, startedAt, toolCalls);
+      return finish(task, buildResult(plan, review, rounds, startedAt, toolCalls));
     }
     notes = review.issues.join("\n");
   }
 
   console.log(`Plan was not approved in ${maxRounds} rounds. output.md was not updated.`);
-  return buildResult(plan, review!, rounds, startedAt, toolCalls);
+  return finish(task, buildResult(plan, review!, rounds, startedAt, toolCalls));
 }

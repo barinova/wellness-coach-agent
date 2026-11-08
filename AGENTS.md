@@ -11,16 +11,20 @@ Local wellness coach with a safety review loop. Not a medical product. Coach ans
 - `src/agents/healthCoach.ts` / `src/agents/safetyReviewer.ts` — agent constructors; instructions from `prompts/`; coach gets tools, reviewer has none (no side effects)
 - `src/skills/` — coach tools (`getProfile`, `getRecentLog`, `savePlan`, `generateShoppingList`, `suggestWorkoutTemplate`, `listFavoriteRecipes`); Zod + descriptions; simple array, no registry
 - `prompts/healthCoach.v2.md`, `prompts/safetyReviewer.v1.md` — versioned prompt text; active versions in `src/harness/promptVersions.ts`
-- `src/harness/runHealthAgent.ts` — orchestrator: medical keyword gate, coach/review loop (`maxRounds` default 3), required-tool nudge + harness fallback, gated `savePlan` on approve, returns `toolCalls`
+- `src/harness/runHealthAgent.ts` — orchestrator: medical keyword gate, coach/review loop (`maxRounds` default 3), required-tool nudge + harness fallback, gated `savePlan` on approve, returns `toolCalls`; best-effort `traceRun` on every exit
+- `src/harness/traceRun.ts` — writes local JSON traces under `runs/` (write errors do not fail the run)
 - `src/harness/requiredTools.ts` — which tools a task implies; soft nudge then deterministic fallback
 - `src/harness/collectToolCalls.ts` — ordered `ToolCallInfo` (name + optional detail, e.g. getRecentLog days)
 - `src/harness/cursorOpenAI.ts` — Cursor ↔ OpenAI chat_completions adapter with tool_calls bridge
 - `src/harness/validateReview.ts` — Zod review schema + JSON parse with one retry
 - `src/harness/rounds.ts` — `RoundState` history (includes per-round `toolCalls`)
 - `src/harness/score.ts` — `finalScore` + `improved`
+- `scripts/replay.ts` / `scripts/eval.ts` — local debug CLIs (`pnpm run replay`, `pnpm run eval`)
+- `evals/cases/*.json` — mini-eval fixtures (including medical safety-gate case)
 - `app/page.tsx` + `app/globals.css` — UI (duration, prompt versions, round history with tools, dynamics)
 - `app/api/agent/run/route.ts` — POST `{ task }`, Node runtime, 300s
 - `data/profile.md` — tracked seed profile; `data/log.md`, `data/recipes.md`, `data/output.md`, `data/shopping.md` — local/generated via coach tools (gitignored)
+- `runs/` — local JSON run traces (gitignored except `runs/run-example.json`)
 - `design-system/health-coach/MASTER.md` — visual source of truth (healthcare tokens in CSS may override the bio-red palette)
 
 ## Commands
@@ -31,11 +35,13 @@ Use **pnpm** only. `npm` / `yarn` / `bun` are blocked.
 pnpm install
 pnpm run dev
 pnpm run build
+pnpm run replay -- runs/run-example.json
+pnpm run eval
 ```
 
 Open **http://localhost:3000**. A coach run often takes 15–90 seconds; keep the tab open until it finishes.
 
-`.env` needs `CURSOR_API_KEY`. Do not commit `.env`. Do not log the key.
+`.env` needs `CURSOR_API_KEY`. Optional `AGENT_MODEL` (default `composer-2.5`) selects the Cursor model for coach, reviewer, and traces. Document new keys only in `.env.example`. Do not commit `.env`. Do not log the key.
 
 ## Codebase principles
 
@@ -56,6 +62,7 @@ Open **http://localhost:3000**. A coach run often takes 15–90 seconds; keep th
 - Coach and reviewer prompts stay in English under `prompts/*.md`. Change prompt text there (or bump `ACTIVE_PROMPTS` in `src/harness/promptVersions.ts`); do not duplicate copy in the UI.
 - This is not a medical product: no diagnoses, treatment, medications, dosages, or symptom interpretation in coach output.
 - Never commit `.env`, API keys, or secrets. Never log `CURSOR_API_KEY`.
+- AI coding agents must not read, open, print, edit, or append `.env` (or other secret files). Update `.env.example` only; tell the human which keys to set locally. App runtime code may still load `.env` on disk — that is not an invitation for the agent to inspect it.
 - Prefer pnpm-only tooling already enforced by `packageManager`, `engines`, and `scripts/only-pnpm.mjs`.
 
 ## Testing

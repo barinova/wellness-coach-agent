@@ -17,3 +17,8 @@ data/log.md
 data/recipes.md
 data/output.md
 data/shopping.md
+
+# Local agent run traces (example stays tracked)
+runs/*
+!runs/run-example.json
+

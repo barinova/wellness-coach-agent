@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   CircleCheck,
@@ -109,6 +109,16 @@ export default function HomePage() {
   const hintId = "task-hint";
   const errorId = "task-error";
 
+  // If React is down (Fast Refresh / runtime error), the browser may native-GET the form
+  // as `/?task=...` and remount with empty state. Recover the text from the URL once.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("task")?.trim();
+    if (!fromUrl) return;
+    setTask(fromUrl);
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
+
   async function runAgent() {
     const nextTask = task.trim();
     if (state === "running") return;
@@ -205,7 +215,6 @@ export default function HomePage() {
               </p>
               <Textarea
                 id={taskId}
-                name="task"
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 onKeyDown={onTaskKeyDown}
@@ -231,7 +240,13 @@ export default function HomePage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-              <Button type="submit" size="lg" className="min-h-11 min-w-11 px-4" disabled={running}>
+              <Button
+                type="button"
+                size="lg"
+                className="min-h-11 min-w-11 px-4"
+                disabled={running}
+                onClick={() => void runAgent()}
+              >
                 {running ? (
                   <Loader2 className="animate-spin" aria-hidden="true" />
                 ) : (

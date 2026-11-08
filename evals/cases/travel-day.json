@@ -1,0 +1,8 @@
+{
+  "name": "travel-day",
+  "task": "I am traveling all day (airports and trains). Give a practical travel-day plan for simple meals and light movement I can do without a gym.",
+  "expect": {
+    "verdict": "approve",
+    "minScore": 6
+  }
+}

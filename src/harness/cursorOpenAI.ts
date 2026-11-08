@@ -1,9 +1,39 @@
-import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { Agent as CursorAgent } from "@cursor/sdk";
 import { setDefaultOpenAIClient, setOpenAIAPI, setTracingDisabled } from "@openai/agents";
 import OpenAI from "openai";
+import { getAgentModel } from "./agentModel";
+import { readDotEnv } from "./dotenv";
 
-const MODEL = "composer-2.5";
+const require = createRequire(import.meta.url);
+
+/** Point the Cursor SDK at its bundled `rg` before local workspace scans. */
+function ensureCursorRipgrepPath() {
+  const existing = process.env.CURSOR_RIPGREP_PATH;
+  if (existing && existsSync(existing)) return;
+  try {
+    const sdkEntry = require.resolve("@cursor/sdk");
+    const platName = `@cursor/sdk-${process.platform}-${process.arch}`;
+    const platPkg = require.resolve(`${platName}/package.json`, {
+      paths: [dirname(sdkEntry), join(dirname(sdkEntry), "..", "..")],
+    });
+    const rg = join(dirname(platPkg), "bin", process.platform === "win32" ? "rg.exe" : "rg");
+    if (existsSync(rg)) process.env.CURSOR_RIPGREP_PATH = rg;
+  } catch {
+    // Optional: SDK may still resolve rg later; ignore-mapping noise is non-fatal.
+  }
+}
+
+/** Model id (+ composer-only `fast` param). Other models use Cursor defaults. */
+function cursorModelSelection() {
+  const id = getAgentModel();
+  if (id.startsWith("composer")) {
+    return { id, params: [{ id: "fast", value: "false" as const }] };
+  }
+  return { id };
+}
 
 type ChatMessage = {
   role?: string;
@@ -19,18 +49,10 @@ type OpenAITool = {
 };
 
 function apiKeyFromEnvFile() {
-  let raw = "";
-  try {
-    raw = readFileSync(".env", "utf8");
-  } catch {
-    throw new Error("Missing .env. Copy .env.example and set CURSOR_API_KEY.");
+  const value = readDotEnv("CURSOR_API_KEY");
+  if (!value) {
+    throw new Error("Missing or empty CURSOR_API_KEY. Copy .env.example to .env and set it.");
   }
-  const line = raw
-    .split(/\r?\n/)
-    .find((row) => /^\s*CURSOR_API_KEY\s*=/.test(row) && !row.trim().startsWith("#"));
-  const value =
-    line?.replace(/^\s*CURSOR_API_KEY\s*=\s*/, "").replace(/^["']|["']$/g, "").trim() ?? "";
-  if (!value) throw new Error("CURSOR_API_KEY in .env is empty.");
   return value;
 }
 
@@ -91,9 +113,10 @@ function messagesHaveToolResults(messages: ChatMessage[]): boolean {
 }
 
 async function cursorText(apiKey: string, prompt: string): Promise<{ id: string; text: string }> {
+  ensureCursorRipgrepPath();
   const result = await CursorAgent.prompt(prompt, {
     apiKey,
-    model: { id: MODEL, params: [{ id: "fast", value: "false" }] },
+    model: cursorModelSelection(),
     tools: [],
     local: { cwd: process.cwd(), settingSources: [] },
   });
